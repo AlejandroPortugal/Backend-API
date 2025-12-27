@@ -18,9 +18,12 @@ import correoRoutes from './routes/correo.routes.js'
 import documentRoutes from './routes/document.routes.js'
 import dashboardRoutes from './routes/dashboard.routes.js'
 import actasRoutes from './routes/actas.routes.js'
+import inicioDocenteRoutes from './routes/inicioDocente.routes.js'
 import dotenv from 'dotenv';
 import schedule from 'node-schedule';
 import { enviarCorreo } from './controllers/correo.controller.js';
+import "dotenv/config";
+
 
 
 
@@ -50,6 +53,7 @@ app.use(correoRoutes);
 app.use(documentRoutes);
 app.use(dashboardRoutes);
 app.use(actasRoutes);
+app.use(inicioDocenteRoutes);
 
 
 // Tarea a las 18:00 todos los días

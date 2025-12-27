@@ -56,85 +56,148 @@ export const createProfesor = async (req, res) => {
     apellidoMaterno,
     email,
     numCelular,
-    fechaDeNacimiento,
     contrasenia,
     rol,
     idhorario,
+    idmateria,
   } = req.body;
 
+  // Normaliza fecha (acepta fechaDeNacimiento | fechaNacimiento | fechadenacimiento)
+  const rawAny =
+    (req.body.fechaDeNacimiento ??
+     req.body.fechaNacimiento ??
+     req.body.fechadenacimiento ??
+     "").toString().trim();
+
+  let fechaDeNacimiento = rawAny;
+
+  // Acepta DD/MM/YYYY
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(rawAny)) {
+    const [dd, mm, yyyy] = rawAny.split("/");
+    fechaDeNacimiento = `${yyyy}-${mm}-${dd}`; // YYYY-MM-DD
+  }
+
+  if (fechaDeNacimiento && !/^\d{4}-\d{2}-\d{2}$/.test(fechaDeNacimiento)) {
+    const d = new Date(fechaDeNacimiento);
+    if (!Number.isNaN(d.getTime())) fechaDeNacimiento = d.toISOString().slice(0, 10);
+  }
+
+  const nameRe  = /^[a-zA-ZÁÉÍÓÚáéíóúÑñ\s]+$/;
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const passRe  = /^(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{6,}$/;
+
   try {
-    // Validación de campos obligatorios
-    const requiredFields = {
+    // Campos obligatorios y sin espacios
+    const required = {
       idDireccion,
       nombres,
       apellidoPaterno,
       apellidoMaterno,
       email,
       numCelular,
-      fechaDeNacimiento,
       contrasenia,
       rol,
       idhorario,
+      idmateria,
+      fechaDeNacimiento,
     };
-    for (const [key, value] of Object.entries(requiredFields)) {
-      if (!value || (typeof value === "string" && value.trim() === "")) {
-        return res.status(400).json({
-          error: `El campo ${key} es obligatorio y no puede estar vacío`,
-        });
-      }
-      if (
-        ["nombres", "apellidoPaterno", "apellidoMaterno"].includes(key) &&
-        typeof value === "string" &&
-        /[^a-zA-Z\s]/.test(value)
-      ) {
-        return res.status(400).json({
-          error: `El campo ${key} no puede contener caracteres especiales o números`,
-        });
+    for (const [k, v] of Object.entries(required)) {
+      if (!v || (typeof v === "string" && v.trim() === "")) {
+        return res.status(400).json({ error: `El campo ${k} es obligatorio y no puede estar vacío` });
       }
     }
 
-    // Validar que el rol sea "Profesor"
+    // Nombres solo letras
+    for (const v of [nombres, apellidoPaterno, apellidoMaterno]) {
+      if (typeof v === "string" && !nameRe.test(v)) {
+        return res.status(400).json({ error: "Los nombres y apellidos solo deben contener letras y espacios" });
+      }
+    }
+
+    // Email válido
+    if (!emailRe.test(email)) {
+      return res.status(400).json({ error: "Correo electrónico no válido" });
+    }
+
+    // Celular 8 dígitos
+    if (!/^\d{8}$/.test(String(numCelular))) {
+      return res.status(400).json({ error: "El celular debe tener exactamente 8 dígitos numéricos" });
+    }
+
+    // Contraseña fuerte
+    if (!passRe.test(contrasenia)) {
+      return res.status(400).json({ error: "La contraseña debe tener mínimo 6 caracteres, 1 mayúscula, 1 número y 1 carácter especial" });
+    }
+
+    // Fecha válida y < 2006-01-01 (restricción de BD)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaDeNacimiento)) {
+      return res.status(400).json({ error: "Formato de fecha inválido. Use YYYY-MM-DD" });
+    }
+    if (new Date(fechaDeNacimiento) >= new Date("2006-01-01")) {
+      return res.status(400).json({ error: "La fecha de nacimiento debe ser anterior a 2006-01-01" });
+    }
+
+    // Rol correcto
     if (rol !== "Profesor") {
       return res.status(400).json({ error: "El rol debe ser Profesor" });
     }
 
-    // Validar que el email no esté repetido
-    const emailCheck = await pool.query(
-      "SELECT idProfesor FROM Profesor WHERE email = $1",
-      [email]
-    );
-    if (emailCheck.rows.length > 0) {
-      return res.status(400).json({
-        error: "El correo electrónico ya está registrado por otro usuario",
-      });
+    // Duplicados: email y celular
+    const dupEmail = await pool.query(`SELECT 1 FROM profesor WHERE email = $1`, [email.trim()]);
+    if (dupEmail.rowCount > 0) {
+      return res.status(400).json({ error: "El correo electrónico ya está registrado por otro usuario" });
     }
 
-    const hashedPassword = await bcrypt.hash(contrasenia, 10);
+    const dupCel = await pool.query(`SELECT 1 FROM profesor WHERE numcelular = $1`, [String(numCelular).trim()]);
+    if (dupCel.rowCount > 0) {
+      return res.status(400).json({ error: "El número de celular ya está registrado por otro usuario" });
+    }
 
-    // Insertar en la tabla Profesor
+    // Horario pertenece a la materia
+    const vinc = await pool.query(
+      `SELECT 1 FROM horario WHERE idhorario = $1 AND idmateria = $2`,
+      [idhorario, idmateria]
+    );
+    if (vinc.rowCount === 0) {
+      return res.status(400).json({ error: "El horario no pertenece a la materia seleccionada" });
+    }
+
+    // Hash y guardado
+    const hashed = await bcrypt.hash(contrasenia.trim(), 10);
+
     const profesorResult = await pool.query(
-      `INSERT INTO Profesor (idDireccion, Nombres, ApellidoPaterno, ApellidoMaterno, email, NumCelular, FechaDeNacimiento, Contrasenia, Rol, Estado, idhorario) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10) RETURNING *`,
+      `INSERT INTO profesor (
+         iddireccion, nombres, apellidopaterno, apellidomaterno,
+         email, numcelular, fechadenacimiento, contrasenia,
+         rol, estado, idhorario, idmateria
+       ) VALUES (
+         $1,$2,$3,$4,
+         $5,$6,$7,$8,
+         $9,true,$10,$11
+       ) RETURNING *`,
       [
         idDireccion,
-        nombres,
-        apellidoPaterno,
-        apellidoMaterno,
-        email,
-        numCelular,
-        fechaDeNacimiento,
-        hashedPassword,
-        rol,
+        nombres.trim(),
+        apellidoPaterno.trim(),
+        apellidoMaterno.trim(),
+        email.trim(),
+        String(numCelular).trim(),
+        fechaDeNacimiento,           // YYYY-MM-DD
+        hashed,
+        "Profesor",
         idhorario,
+        idmateria,
       ]
     );
 
-    res.status(201).json(profesorResult.rows[0]);
+    return res.status(201).json(profesorResult.rows[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 };
+
+
 
 // Actualizar un profesor
 export const updateProfesor = async (req, res) => {

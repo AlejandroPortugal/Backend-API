@@ -47,7 +47,6 @@ export const getPadreFamiliaById = async (req, res) => {
   }
 };
 
-// Crear un nuevo padre de familia
 export const createPadreFamilia = async (req, res) => {
   const {
     idDireccion,
@@ -56,80 +55,123 @@ export const createPadreFamilia = async (req, res) => {
     apellidoMaterno,
     email,
     numCelular,
-    fechaDeNacimiento,
     contrasenia,
     rol,
   } = req.body;
 
+  // normaliza fecha con múltiples posibles claves
+  const fechaRaw =
+    req.body.fechaDeNacimiento ??
+    req.body.fechaNacimiento ??
+    req.body.fechadenacimiento ??
+    "";
+  const fechaDeNacimiento = typeof fechaRaw === "string" ? fechaRaw.trim() : "";
+
   try {
-    // Validar campos obligatorios y que no tengan solo espacios en blanco
-    if (
-      !idDireccion ||
-      !nombres?.trim() ||
-      !apellidoPaterno?.trim() ||
-      !apellidoMaterno?.trim() ||
-      !rol?.trim() ||
-      !email?.trim() ||
-      !numCelular?.trim() ||
-      !fechaDeNacimiento ||
-      !contrasenia?.trim()
-    ) {
-      return res
-        .status(400)
-        .json({ error: "Todos los campos son obligatorios y no pueden contener solo espacios en blanco" });
-    }
-
-    // Validar que los nombres y apellidos no contengan caracteres especiales
     const namePattern = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/;
-    if (
-      !namePattern.test(nombres) ||
-      !namePattern.test(apellidoPaterno) ||
-      !namePattern.test(apellidoMaterno)
-    ) {
-      return res.status(400).json({ error: "Los nombres y apellidos no deben contener caracteres especiales" });
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const passPattern = /^(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{6,}$/;
+
+    // campos requeridos
+    const required = {
+      idDireccion,
+      nombres,
+      apellidoPaterno,
+      apellidoMaterno,
+      email,
+      numCelular,
+      fechaDeNacimiento,
+      contrasenia,
+      rol,
+    };
+    for (const [k, v] of Object.entries(required)) {
+      if (!v || (typeof v === "string" && v.trim() === "")) {
+        return res.status(400).json({ error: `El campo ${k} es obligatorio y no puede estar vacío` });
+      }
     }
 
-    // Validar que el rol sea "Padre de Familia"
-    if (rol !== "Padre de Familia") {
-      return res.status(400).json({ error: 'El rol debe ser "Padre de Familia"' });
+    // validación de nombres/apellidos
+    if (![nombres, apellidoPaterno, apellidoMaterno].every((x) => namePattern.test(String(x).trim()))) {
+      return res.status(400).json({ error: "Los nombres y apellidos solo permiten letras y espacios" });
     }
 
-    // Validar que el email no esté repetido
+    // rol
+    if (String(rol).trim() !== "Padre de Familia") {
+      return res.status(400).json({ error: "El rol debe ser 'Padre de Familia'" });
+    }
+
+    // email válido
+    if (!emailPattern.test(String(email).trim())) {
+      return res.status(400).json({ error: "Correo electrónico no válido" });
+    }
+
+    // celular: exactamente 8 dígitos
+    const celular8 = String(numCelular).replace(/\D/g, "");
+    if (!/^\d{8}$/.test(celular8)) {
+      return res.status(400).json({ error: "El celular debe tener exactamente 8 dígitos" });
+    }
+
+    // fecha: formato y 18+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaDeNacimiento)) {
+      return res.status(400).json({ error: "Formato de fecha inválido. Use YYYY-MM-DD" });
+    }
+    const max = new Date();
+    max.setFullYear(max.getFullYear() - 18);
+    if (new Date(fechaDeNacimiento) > max) {
+      return res.status(400).json({ error: "Debe ser mayor de 18 años" });
+    }
+
+    // contraseña fuerte
+    if (!passPattern.test(String(contrasenia))) {
+      return res.status(400).json({ error: "La contraseña debe tener mínimo 6 caracteres, 1 mayúscula, 1 número y 1 carácter especial" });
+    }
+
+    // unicidad email
     const emailCheck = await pool.query(
       "SELECT idPadre FROM PadreDeFamilia WHERE email = $1",
-      [email.trim()]
+      [String(email).trim()]
     );
-    if (emailCheck.rows.length > 0) {
-      return res
-        .status(400)
-        .json({ error: "El correo electrónico ya está registrado por otro usuario" });
+    if (emailCheck.rowCount > 0) {
+      return res.status(400).json({ error: "El correo electrónico ya está registrado por otro usuario" });
     }
-    const hashedPassword = await bcrypt.hash(contrasenia.trim(), 10);
-    // Insertar en la tabla PadreDeFamilia
+
+    // unicidad celular
+    const celCheck = await pool.query(
+      "SELECT idPadre FROM PadreDeFamilia WHERE NumCelular = $1",
+      [celular8]
+    );
+    if (celCheck.rowCount > 0) {
+      return res.status(400).json({ error: "El celular ya está registrado por otro usuario" });
+    }
+
+    const hashedPassword = await bcrypt.hash(String(contrasenia).trim(), 10);
+
     const padreResult = await pool.query(
-      `INSERT INTO PadreDeFamilia (idDireccion, Nombres, ApellidoPaterno, ApellidoMaterno, email, NumCelular, FechaDeNacimiento, Contrasenia, Rol, Estado) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true) RETURNING *`,
+      `INSERT INTO PadreDeFamilia
+       (idDireccion, Nombres, ApellidoPaterno, ApellidoMaterno,
+        email, NumCelular, FechaDeNacimiento, Contrasenia, Rol, Estado)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true)
+       RETURNING *`,
       [
         idDireccion,
-        nombres.trim(),
-        apellidoPaterno.trim(),
-        apellidoMaterno.trim(),
-        email.trim(),
-        numCelular.trim(),
-        fechaDeNacimiento,
+        String(nombres).trim(),
+        String(apellidoPaterno).trim(),
+        String(apellidoMaterno).trim(),
+        String(email).trim(),
+        celular8,
+        fechaDeNacimiento,      // YYYY-MM-DD
         hashedPassword,
-        rol.trim(),
+        "Padre de Familia",
       ]
     );
 
-    res.status(201).json(padreResult.rows[0]);
+    return res.status(201).json(padreResult.rows[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
-
-
 };
+
 
 // Actualizar un padre de familia (con validación y preservando valores actuales)
 // Actualizar un padre de familia

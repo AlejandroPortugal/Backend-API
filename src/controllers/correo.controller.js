@@ -93,8 +93,8 @@ export const enviarCorreo = async ({ idPadre, motivo, materia, fecha, horario, d
         port: 587,
         secure: false,
         auth: {
-          user: 'aleejocr7@gmail.com', // Tu correo electrónico
-          pass: 'wltk fhvo uomy nlvt' // Contraseña de aplicación generada en Gmail
+          user: 'aportugal.tecnopreco@gmail.com', // Tu correo electrónico
+          pass: 'xefk nmbs emwo lagv' // Contraseña de aplicación generada en Gmail
         },
         tls: {
           rejectUnauthorized: false

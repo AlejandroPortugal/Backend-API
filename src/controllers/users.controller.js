@@ -259,10 +259,26 @@ export const registrarIngreso = async (req, res) => {
     return res.status(400).json({ message: "Faltan datos para registrar el ingreso" });
   }
 
+  const roleColumnMap = {
+    Administrador: "idAdministrador",
+    Profesor: "idProfesor",
+    Psicologo: "idPsicologo",
+  };
+
+  const actorColumn = roleColumnMap[rol];
+
+  if (!actorColumn) {
+    return res.status(400).json({ message: "Rol no válido para registrar ingreso" });
+  }
+
   try {
+    const query = `
+      INSERT INTO Ingresos (idUsuario, ${actorColumn}, nombreCompleto, rol, fechaIngreso, horaIngreso)
+      VALUES ($1, $1, $2, $3, $4, $5)
+    `;
+
     await pool.query(
-      `INSERT INTO Ingresos (idUsuario, nombreCompleto, rol, fechaIngreso, horaIngreso)
-       VALUES ($1, $2, $3, $4, $5)`,
+      query,
       [idUsuario, nombreCompleto, rol, fechaIngreso, horaIngreso]
     );
 

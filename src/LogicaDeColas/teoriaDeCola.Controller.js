@@ -1,7 +1,146 @@
 import { pool } from "../db.js";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
+import { scheduleGoogleMeetEvent } from "../services/googleMeet.service.js";
 
+const toRFC3339DateTime = (dateStr, timeStr) => {
+  if (!dateStr || !timeStr) return null;
+
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const [hours = "00", minutes = "00", seconds = "00"] = timeStr.split(":");
+  const localDate = new Date(year, month - 1, Number(hours), Number(minutes), Number(seconds));
+
+  const pad = (value) => String(Math.abs(Number(value))).padStart(2, "0");
+  const normalizedTime = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  const offsetMinutes = localDate.getTimezoneOffset();
+  const sign = offsetMinutes <= 0 ? "+" : "-";
+  const offsetHours = pad(Math.floor(Math.abs(offsetMinutes) / 60));
+  const offsetMins = pad(Math.abs(offsetMinutes) % 60);
+
+  return `${dateStr}T${normalizedTime}${sign}${offsetHours}:${offsetMins}`;
+};
+
+const obtenerEntrevistaActivaPorPadreYFecha = async (idPadre, fecha) => {
+  if (!idPadre || !fecha) return null;
+
+  const result = await pool.query(
+    `SELECT 
+       re.idreservarentrevista,
+       CASE 
+         WHEN re.idpsicologo IS NOT NULL THEN 'Psicologo'
+         ELSE COALESCE(m.nombre, 'el profesional asignado')
+       END AS materia
+     FROM reservarentrevista re
+     LEFT JOIN profesor prof ON re.idprofesor = prof.idprofesor
+     LEFT JOIN horario h ON prof.idhorario = h.idhorario
+     LEFT JOIN materia m ON h.idmateria = m.idmateria
+     WHERE re.idpadre = $1
+       AND re.fecha = $2
+       AND re.estado IS DISTINCT FROM FALSE
+     ORDER BY re.idreservarentrevista
+     LIMIT 1`,
+    [idPadre, fecha]
+  );
+
+  return result.rows[0] || null;
+};
+
+const EMAIL_BRAND_COLOR = "#0f5132";
+const EMAIL_ICON_URL =
+  "https://cdn-icons-png.flaticon.com/512/1047/1047711.png";
+
+const buildEntrevistaEmailContent = ({
+  destinatario,
+  motivo,
+  materia,
+  fecha,
+  horaInicio,
+  horaFin,
+  descripcion,
+  profesional,
+}) => {
+  const descripcionTexto = (descripcion ?? "").toString().trim();
+  const descripcionHtml = descripcionTexto
+    ? descripcionTexto.replace(/\n/g, "<br />")
+    : "Sin descripción adicional.";
+  const descripcionPlain =
+    descripcionTexto || "Sin descripción adicional.";
+
+  const rows = [
+    { label: "Motivo", value: motivo },
+    { label: "Materia", value: materia },
+    { label: "Fecha", value: fecha },
+    { label: "Hora de inicio", value: horaInicio },
+  ];
+
+  if (horaFin) {
+    rows.push({ label: "Hora de fin", value: horaFin });
+  }
+
+  const detailsHtml = rows
+    .filter((row) => row.value)
+    .map(
+      (row) => `
+        <tr>
+          <td style="padding:6px 12px;font-weight:600;color:${EMAIL_BRAND_COLOR};width:40%;">${row.label}</td>
+          <td style="padding:6px 12px;color:#1f2933;">${row.value}</td>
+        </tr>`
+    )
+    .join("");
+
+  const html = `
+  <div style="background-color:#f4f6f8;padding:24px;font-family:'Segoe UI',Arial,sans-serif;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:640px;margin:0 auto;background-color:#ffffff;border-radius:12px;box-shadow:0 8px 20px rgba(12,53,31,0.18);overflow:hidden;">
+      <tr>
+        <td style="background:${EMAIL_BRAND_COLOR};color:#ffffff;padding:18px 24px;">
+          <table role="presentation" width="100%">
+            <tr>
+              <td style="width:56px;">
+                <img src="${EMAIL_ICON_URL}" alt="IDEB" style="width:48px;height:48px;border-radius:50%;border:2px solid #ffffff;display:block;" />
+              </td>
+              <td style="text-align:right;font-size:20px;font-weight:600;">IDEB</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:24px;">
+          <p style="font-size:16px;color:#0b2e13;margin:0 0 12px;">Estimado(a) ${destinatario},</p>
+          <p style="font-size:15px;color:#1f2933;margin:0 0 20px;">
+            Nos comunicamos para confirmarle que se ha registrado una entrevista. A continuación se detalla la información más relevante:
+          </p>
+          <table role="presentation" width="100%" style="border-collapse:collapse;border:1px solid #e9ecef;border-radius:8px;overflow:hidden;">
+            ${detailsHtml}
+          </table>
+          <div style="margin:20px 0;padding:16px;border:1px solid #e9ecef;border-radius:8px;background-color:#f9fafb;">
+            <p style="margin:0 0 8px;font-size:14px;font-weight:600;color:${EMAIL_BRAND_COLOR};">Descripción del docente</p>
+            <p style="margin:0;font-size:14px;line-height:1.6;color:#1f2933;">${descripcionHtml}</p>
+          </div>
+          <p style="font-size:14px;color:#1f2933;margin:0 0 16px;">Atentamente,<br/>${profesional}</p>
+          <div style="text-align:center;font-size:12px;color:#6b7280;border-top:1px solid #e9ecef;padding-top:16px;">
+            Este mensaje fue enviado automáticamente por el sistema de entrevistas del IDEB.
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>`;
+
+  const text = [
+    `Estimado(a) ${destinatario},`,
+    "",
+    "Se registró una entrevista con el siguiente detalle:",
+    rows
+      .filter((row) => row.value)
+      .map((row) => `- ${row.label}: ${row.value}`)
+      .join("\n"),
+    "",
+    `Descripción: ${descripcionPlain}`,
+    "",
+    `Atentamente, ${profesional}`,
+  ].join("\n");
+
+  return { html, text };
+};
 
 export const agendarEntrevista = async (req, res) => {
   const { idProfesor, idPsicologo, idPadre, fecha, descripcion, idMotivo } = req.body;
@@ -12,6 +151,19 @@ export const agendarEntrevista = async (req, res) => {
     if ((!idProfesor && !idPsicologo) || !idPadre || !fecha || !idMotivo) {
       return res.status(400).json({
         error: "Todos los campos obligatorios deben ser completados.",
+      });
+    }
+
+    const entrevistaExistente = await obtenerEntrevistaActivaPorPadreYFecha(
+      idPadre,
+      fecha
+    );
+
+    if (entrevistaExistente) {
+      const materiaExistente =
+        entrevistaExistente.materia || "el profesional asignado";
+      return res.status(400).json({
+        error: `El padre de familia ya tiene una entrevista programada para ${fecha} con ${materiaExistente}.`,
       });
     }
 
@@ -147,10 +299,59 @@ export const agendarEntrevista = async (req, res) => {
         [idProfesor, idPsicologo, idPadre, fecha, descripcion, idMotivo]
       );
 
+      let meetLink = null;
+      const startDateTime = toRFC3339DateTime(fecha, nuevaEntrevistaInicio);
+      const endDateTime = toRFC3339DateTime(fecha, nuevaEntrevistaFin);
+
+      if (startDateTime && endDateTime) {
+        try {
+          const padreInfo = await pool.query(
+            "SELECT nombres, apellidopaterno, apellidomaterno, email FROM padredefamilia WHERE idpadre = $1",
+            [idPadre]
+          );
+
+          const docenteTabla = idProfesor ? "profesor" : "psicologo";
+          const docenteColumna = idProfesor ? "idprofesor" : "idpsicologo";
+          const docenteInfo = await pool.query(
+            `SELECT nombres, apellidopaterno, apellidomaterno, email FROM ${docenteTabla} WHERE ${docenteColumna} = $1`,
+            [idProfesor || idPsicologo]
+          );
+
+          const padre = padreInfo.rows[0];
+          const docente = docenteInfo.rows[0];
+
+          const attendees = [];
+          if (docente?.email) attendees.push({ email: docente.email });
+          if (padre?.email) attendees.push({ email: padre.email });
+
+          const summarySegments = [
+            "Entrevista IDEB",
+            materia ? `- ${materia}` : "",
+            nombremotivo ? `(${nombremotivo})` : "",
+          ].filter(Boolean);
+
+          const meetResult = await scheduleGoogleMeetEvent({
+            summary: summarySegments.join(" ").trim() || "Entrevista IDEB",
+            description: descripcion,
+            startDateTime,
+            endDateTime,
+            attendees,
+            timeZone: process.env.GOOGLE_TIMEZONE || "America/Lima",
+          });
+
+          meetLink = meetResult?.meetLink || null;
+        } catch (meetError) {
+          console.error("No se pudo programar la reuni��n en Google Meet:", meetError.message);
+        }
+      }
+
       console.log("Nueva entrevista insertada correctamente.");
-      res.status(201).json({
+      return res.status(201).json({
         success: true,
         message: "Entrevista agendada correctamente.",
+        meetLink,
+        horaInicio: nuevaEntrevistaInicio,
+        horaFin: nuevaEntrevistaFin,
       });
     }
   } catch (error) {
@@ -241,21 +442,15 @@ export const enviarCorreoProfesores = async ({
 
     const nombresProfesional = `${profesional.nombres} ${profesional.apellidopaterno} ${profesional.apellidomaterno}`;
 
-    // Crear mensaje de correo
-    const mensaje = `
-      Estimado(a) ${nombresPadre},
-
-      Nos comunicamos para informarle que se ha programado una entrevista con el siguiente detalle:
-
-      - Motivo: ${motivo}
-      - Materia: ${materia}
-      - Fecha: ${fecha}
-      - Hora de inicio: ${horarioInicio}
-      - Descripción: ${descripcion}
-
-      Atentamente,
-      ${idProfesor ? "Profesor" : "Psicólogo"}: ${nombresProfesional}
-    `;
+    const { html, text } = buildEntrevistaEmailContent({
+      destinatario: nombresPadre,
+      motivo,
+      materia,
+      fecha,
+      horaInicio: horarioInicio,
+      descripcion,
+      profesional: `${idProfesor ? "Profesor" : "Psicólogo"}: ${nombresProfesional}`,
+    });
 
     // Configurar transporte de correo
     const transporter = nodemailer.createTransport({
@@ -275,8 +470,9 @@ export const enviarCorreoProfesores = async ({
     const mailOptions = {
       from: "aleejocr7@gmail.com",
       to: emailPadre,
-      subject: "Cita agendada",
-      text: mensaje,
+      subject: "Confirmación de entrevista IDEB",
+      text,
+      html,
     };
 
     // Enviar correo
@@ -656,6 +852,19 @@ export const insertarReservaEntrevista = async (req, res) => {
         });
     }
 
+    const entrevistaExistente = await obtenerEntrevistaActivaPorPadreYFecha(
+      idPadre,
+      fecha
+    );
+
+    if (entrevistaExistente) {
+      const materiaExistente =
+        entrevistaExistente.materia || "el profesional asignado";
+      return res.status(400).json({
+        error: `El padre de familia ya tiene una entrevista programada para ${fecha} con ${materiaExistente}.`,
+      });
+    }
+
     // Validar motivo y obtener su prioridad
     const motivoCheck = await pool.query(
       `SELECT m.nombremotivo, p.tipoprioridad 
@@ -944,20 +1153,25 @@ export const enviarCorreoPadres = async ({
 
     console.log("Correo a enviar a:", emailPadre);
 
-    const mensaje = `
-    Estimado(a) ${nombresPadre},
-  
-    Nos comunicamos del Intituto de Educacion Bancaria para informarle que se ha programado una entrevista con el siguiente detalle:
-  
-    - Motivo: ${motivo}
-    - Materia: ${materia}
-    - Fecha: ${fecha}
-    - Hora de inicio: ${horario}
-    - Hora de fin: ${horafin}
-  
-    Atentamente,
-    Profesor: ${profesor.nombres}
-  `;
+    const nombreProfesor = [
+      profesor.nombres,
+      profesor.apellidopaterno,
+      profesor.apellidomaterno,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || "Profesional IDEB";
+
+    const { html, text } = buildEntrevistaEmailContent({
+      destinatario: nombresPadre,
+      motivo,
+      materia,
+      fecha,
+      horaInicio: horario,
+      horaFin: horafin,
+      descripcion,
+      profesional: `Profesor: ${nombreProfesor}`,
+    });
 
     const transporter = nodemailer.createTransport({
       host: "smtp.gmail.com",
@@ -975,8 +1189,9 @@ export const enviarCorreoPadres = async ({
     const mailOptions = {
       from: "aleejocr7@gmail.com",
       to: emailPadre,
-      subject: "Cita agendada",
-      text: mensaje,
+      subject: "Confirmación de entrevista IDEB",
+      text,
+      html,
     };
 
     await transporter.sendMail(mailOptions);
