@@ -1,5 +1,5 @@
 import Router from 'express';
-import { exportExcel, exportToPDF, exportWord } from '../controllers/document.controller.js';
+import { exportExcel, exportToPDF, exportWord } from '../modules/document/document.controller.js';
 
 const router = Router();
 

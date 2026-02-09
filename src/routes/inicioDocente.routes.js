@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { obtenerPanelDocente } from "../controllers/inicioDocente.controller.js";
+import { obtenerPanelDocente } from "../modules/inicioDocente/inicioDocente.controller.js";
 
 const router = Router();
 

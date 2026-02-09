@@ -1,5 +1,9 @@
 import { Router } from 'express';
-import { getMateria, getMateriaById, getMateriaForPsicologo } from '../controllers/materia.controller.js';
+import {
+  getMateria,
+  getMateriaById,
+  getMateriaForPsicologo,
+} from '../modules/materia/materia.controller.js';
 
 const router = Router();
 

@@ -4,8 +4,8 @@ import {
   getDireccionById,
   createDireccion,
   updateDireccion,
-  deleteDireccion
-} from '../controllers/direccion.controller.js';
+  deleteDireccion,
+} from '../modules/direccion/direccion.controller.js';
 
 const router = Router();
 

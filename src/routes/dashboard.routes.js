@@ -5,8 +5,8 @@ import {
   getWeeklyInterviews,
   getInterviewStatusCounts,
   getMostRequestedSubject,
-  getMostRequestedProfessor
-} from "../controllers/dashboard.controller.js";
+  getMostRequestedProfessor,
+} from "../modules/dashboard/dashboard.controller.js";
 
 const router = Router();
 

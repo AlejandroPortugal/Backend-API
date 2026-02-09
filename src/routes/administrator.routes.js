@@ -1,5 +1,11 @@
 import Router from 'express';
-import { createAdministrador, deleteAdministrador, getAdministrador, getAdministradorById, updateAdministrador } from '../controllers/administrator.controller.js';
+import {
+  createAdministrador,
+  deleteAdministrador,
+  getAdministrador,
+  getAdministradorById,
+  updateAdministrador,
+} from '../modules/administrator/administrator.controller.js';
 
 const router = Router();
 

@@ -1,5 +1,14 @@
 import express from "express";
-import { activarActaReunion, actualizarActaReunion, crearActaReunion, eliminarActaReunion, getActasByEstudiante, obtenerActaReunionPorId, obtenerActasInactivas, obtenerActasReunion } from "../controllers/actas.controller.js";
+import {
+  activarActaReunion,
+  actualizarActaReunion,
+  crearActaReunion,
+  eliminarActaReunion,
+  getActasByEstudiante,
+  obtenerActaReunionPorId,
+  obtenerActasInactivas,
+  obtenerActasReunion,
+} from "../modules/actas/actas.controller.js";
 
 const router = express.Router();
 

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getMotivos, getMotivosById } from '../controllers/Motivo.controller.js';
+import { getMotivos, getMotivosById } from '../modules/motivo/motivo.controller.js';
 
 const router = Router();
 

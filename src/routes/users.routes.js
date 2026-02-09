@@ -1,5 +1,17 @@
 import Router from 'express';
-import { activarUsuario, filterUsers, filterUsuarios, getallUserEntry, getAllUsers, listarUsuariosInactivos, obtenerCantidadUsuariosConIngresos, obtenerDatosUsuariosConIngresos, obtenerIngresos, obtenerIngresosPorRango, registrarIngreso } from '../controllers/users.controller.js';
+import {
+  activarUsuario,
+  filterUsers,
+  filterUsuarios,
+  getallUserEntry,
+  getAllUsers,
+  listarUsuariosInactivos,
+  obtenerCantidadUsuariosConIngresos,
+  obtenerDatosUsuariosConIngresos,
+  obtenerIngresos,
+  obtenerIngresosPorRango,
+  registrarIngreso,
+} from '../modules/users/users.controller.js';
 
 
 const router = Router();

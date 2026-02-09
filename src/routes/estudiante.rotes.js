@@ -1,5 +1,11 @@
 import Router from 'express';
-import { createEstudiante, deleteEstudiante, getEstudianteById, getEstudiantes, updateEstudiante } from '../controllers/estudiante.controller.js';
+import {
+  createEstudiante,
+  deleteEstudiante,
+  getEstudianteById,
+  getEstudiantes,
+  updateEstudiante,
+} from '../modules/estudiante/estudiante.controller.js';
 
 const router = Router();
 

@@ -1,5 +1,11 @@
 import Router from 'express';
-import { createPsicologo, deletePsicologo, getPsicologoById, getPsicologos, updatePsicologo } from '../controllers/psicologo.controller.js';
+import {
+  createPsicologo,
+  deletePsicologo,
+  getPsicologoById,
+  getPsicologos,
+  updatePsicologo,
+} from '../modules/psicologo/psicologo.controller.js';
 
 const router = Router();
 

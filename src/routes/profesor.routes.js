@@ -1,27 +1,34 @@
 import Router from 'express';
-import {createProfesor, getProfesores, getProfesorById, updateProfesor, deleteProfesor, getProfesorCount, getProfesoresConHorarios } from '../controllers/profesor.controller.js';
+import {
+  createProfesor,
+  getProfesores,
+  getProfesorById,
+  updateProfesor,
+  deleteProfesor,
+  getProfesorCount,
+  getProfesoresConHorarios,
+  getHorarioMateriaByProfesor,
+  actualizarEstadoEntrevistaProfesor,
+} from '../modules/profesor/profesor.controller.js';
 
 
 const router = Router();
 
 //Obtener el listado de todas las personas en la base de datos
 router.get('/obtener/profesores', getProfesores);
-
 //Obtener los datos de la persona a traves de su id
 router.get('/profesor/:idProfesor', getProfesorById);
-
 //Crear un nuevo usuario persona
 router.post('/crear/profesor', createProfesor);
-
 //Actualizar usuario persona
 router.put('/actualizar/profesor/:idProfesor', updateProfesor );
-
 //Eliminar usuario persona
 router.delete('/eliminar/profesor/:idProfesor', deleteProfesor);
-
 router.get('/obtener/cantidad/profesores', getProfesorCount);
-
 router.get('/obtener/profesoresHorarios', getProfesoresConHorarios);
+router.get('/obtener/horario/profesor/:idProfesor', getHorarioMateriaByProfesor);
+router.put('/profesor/entrevista/estado', actualizarEstadoEntrevistaProfesor);
+
 
 
 

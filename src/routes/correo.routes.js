@@ -1,5 +1,5 @@
 import Router from 'express';
-import { enviarCodigoConfirmacion, enviarCorreo } from '../controllers/correo.controller.js';
+import { enviarCodigoConfirmacion, enviarCorreo } from '../modules/correo/correo.controller.js';
 
 const router = Router();
 
