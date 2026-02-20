@@ -271,14 +271,18 @@ export const fetchEntrevistasPorRango = (startDate, endDate) =>
       re.idreservarentrevista,
       TO_CHAR(re.fecha, 'YYYY-MM-DD') AS fecha,
       re.descripcion,
-      TO_CHAR(re.horafinentrevista, 'HH24:MI:SS') AS horainicio,
+      COALESCE(hprof.horainicio::text, hps.horainicio::text) AS horario_inicio,
+      COALESCE(hprof.horafin::text, hps.horafin::text) AS horario_fin,
       p.nombres,
       p.apellidopaterno,
       p.apellidomaterno,
       p.email,
       re.idpadre,
+      re.idprofesor,
+      re.idpsicologo,
       re.idestudiante,
       CONCAT(e.nombres, ' ', e.apellidopaterno, ' ', e.apellidomaterno) AS estudiante,
+      pr.tipoprioridad AS prioridad,
       re.idestado,
       COALESCE(te.nombre, 'Pendiente') AS estado_nombre,
       CASE 
@@ -286,8 +290,14 @@ export const fetchEntrevistasPorRango = (startDate, endDate) =>
         WHEN re.idestado = 3 THEN 'Cancelado'
         ELSE 'Pendiente'
       END AS accion,
-      re.horafinentrevista
+      NULL AS horafinentrevista
     FROM reservarentrevista re
+    LEFT JOIN motivo m ON re.idmotivo = m.idmotivo
+    LEFT JOIN prioridad pr ON m.idprioridad = pr.idprioridad
+    LEFT JOIN profesor prof ON re.idprofesor = prof.idprofesor
+    LEFT JOIN psicologo ps ON re.idpsicologo = ps.idpsicologo
+    LEFT JOIN horario hprof ON prof.idhorario = hprof.idhorario
+    LEFT JOIN horario hps ON ps.idhorario = hps.idhorario
     JOIN padredefamilia p ON re.idpadre = p.idpadre
     LEFT JOIN estudiante e ON e.idestudiante = re.idestudiante
     LEFT JOIN t_estados te ON te."idEstado" = re.idestado

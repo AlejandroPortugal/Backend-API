@@ -1,9 +1,13 @@
-import express from 'express';
-import { PORT } from './config.js';
+import express from "express";
+import cors from "cors";
+import { PORT } from "./config.js";
+import { pool } from "./db.js";
+
+
+
 import profesorRoutes from './routes/profesor.routes.js';
 import administratorRoutes from './routes/administrator.routes.js';
 import padresDeFamiliaRoutes from './routes/padres.routes.js';
-import cors from 'cors';
 import Direccion from './routes/direccion.routes.js';
 import AllUsers from './routes/users.routes.js';
 import estudiantesRoutes from './routes/estudiante.rotes.js';
@@ -23,16 +27,16 @@ import dotenv from 'dotenv';
 import "dotenv/config";
 import { startEntrevistaEmailJob } from './jobs/entrevistaEmail.job.js';
 
-
-
-
-dotenv.config(); // Cargar las variables de entorno
-
-// Asegúrate de que JWT_SECRET esté cargado correctamente
-console.log("JWT_SECRET:", process.env.JWT_SECRET);
+pool.query("select now()")
+  .then(r => console.log("DB OK:", r.rows[0]))
+  .catch(err => console.error("DB ERROR:", err));
 
 const app = express();
+app.use(cors());
+app.use(express.json());
 
+
+app.get("/health", (req,res)=>res.status(200).json({ok:true}));
 app.use(cors());
 app.use(express.json());
 app.use(profesorRoutes);

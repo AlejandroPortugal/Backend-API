@@ -1,4 +1,4 @@
-import * as repository from "./entrevistas.repository.js";
+﻿import * as repository from "./entrevistas.repository.js";
 import { sendEmailWithFallback } from "../../services/email.service.js";
 
 const ok = (data) => ({ data });
@@ -1324,25 +1324,100 @@ export const obtenerListaEntrevistaPorRango = async (startDate, endDate) => {
   try {
     const citas = await repository.fetchEntrevistasPorRango(startDate, endDate);
 
-    // Procesar los resultados para incluir nuevaHorafinEntrevista
-    const duracionAtencion = 25; // Puedes ajustar esto segÃºn la prioridad si es necesario
+    const rows = Array.isArray(citas.rows) ? citas.rows : [];
 
-    const citasConNuevaHora = citas.rows.map((cita) => {
-      // Si horafinentrevista es null, no se puede calcular la nueva hora
-      if (!cita.horafinentrevista) {
-        return { ...cita, nuevaHorafinEntrevista: "No disponible" };
-      }
-
-      const [horas, minutos] = cita.horafinentrevista.split(":").map(Number);
-      const nuevaHoraFinMinutos = horas * 60 + minutos + duracionAtencion;
-      const nuevaHoraFinHoras = Math.floor(nuevaHoraFinMinutos / 60);
-      const nuevaHoraFinRestantesMinutos = nuevaHoraFinMinutos % 60;
-      const nuevaHorafinEntrevista = `${String(nuevaHoraFinHoras).padStart(
+    const addMinutes = (timeValue, minutesToAdd) => {
+      const [hours, minutes] = String(timeValue).split(":").map(Number);
+      const total = (hours || 0) * 60 + (minutes || 0) + minutesToAdd;
+      const outHours = Math.floor(total / 60);
+      const outMinutes = total % 60;
+      return `${String(outHours).padStart(2, "0")}:${String(outMinutes).padStart(
         2,
         "0"
-      )}:${String(nuevaHoraFinRestantesMinutos).padStart(2, "0")}:00`;
+      )}:00`;
+    };
 
-      return { ...cita, nuevaHorafinEntrevista };
+    const prioridadRank = (prioridad) => {
+      const value = (prioridad || "").toString().toLowerCase();
+      if (value === "alta") return 1;
+      if (value === "media") return 2;
+      if (value === "baja") return 3;
+      return 4;
+    };
+
+    const duracionPorPrioridad = (prioridad) => {
+      const value = (prioridad || "").toString().toLowerCase();
+      if (value === "alta") return 25;
+      if (value === "media") return 20;
+      return 10;
+    };
+
+    const grupos = new Map();
+
+    for (const cita of rows) {
+      const key = `${cita.fecha || ""}|${cita.idprofesor || ""}|${
+        cita.idpsicologo || ""
+      }`;
+      if (!grupos.has(key)) {
+        grupos.set(key, []);
+      }
+      grupos.get(key).push(cita);
+    }
+
+    const computedById = new Map();
+
+    for (const citasGrupo of grupos.values()) {
+      const horarioInicio = citasGrupo[0]?.horario_inicio || null;
+      const horarioFin = citasGrupo[0]?.horario_fin || null;
+
+      const ordenadas = [...citasGrupo].sort((a, b) => {
+        const rankA = prioridadRank(a.prioridad);
+        const rankB = prioridadRank(b.prioridad);
+        if (rankA !== rankB) return rankA - rankB;
+        return (a.idreservarentrevista || 0) - (b.idreservarentrevista || 0);
+      });
+
+      let horaActual = horarioInicio;
+      let fueraHorario = false;
+
+      for (const cita of ordenadas) {
+        const key = String(cita.idreservarentrevista || "");
+
+        if (!horarioInicio || !horarioFin || fueraHorario) {
+          computedById.set(key, {
+            nuevaHorafinEntrevista: "No disponible",
+          });
+          continue;
+        }
+
+        const duracion = duracionPorPrioridad(cita.prioridad);
+        const nuevaHoraFin = addMinutes(horaActual, duracion);
+
+        if (nuevaHoraFin > horarioFin) {
+          fueraHorario = true;
+          computedById.set(key, {
+            nuevaHorafinEntrevista: "No disponible",
+          });
+          continue;
+        }
+
+        computedById.set(key, {
+          horainicio: horaActual,
+          horafin: nuevaHoraFin,
+          nuevaHorafinEntrevista: nuevaHoraFin,
+        });
+
+        horaActual = nuevaHoraFin;
+      }
+    }
+
+    const citasConNuevaHora = rows.map((cita) => {
+      const key = String(cita.idreservarentrevista || "");
+      const computed = computedById.get(key);
+      if (!computed) {
+        return { ...cita, nuevaHorafinEntrevista: "No disponible" };
+      }
+      return { ...cita, ...computed };
     });
 
     return ok(citasConNuevaHora);
