@@ -239,6 +239,76 @@ export const fetchEntrevistasPorFechaYProfesional = (fecha, idProfesor, idPsicol
 export const fetchPadreEmail = (idPadre) =>
   pool.query("SELECT email FROM padredefamilia WHERE idpadre = $1", [idPadre]);
 
+export const fetchEntrevistasPendientesParaCierre = (fecha) =>
+  pool.query(
+    `
+    SELECT
+      re.idreservarentrevista,
+      TO_CHAR(re.fecha, 'YYYY-MM-DD') AS fecha,
+      re.idpadre,
+      re.idprofesor,
+      re.idpsicologo,
+      re.descripcion,
+      m.nombremotivo,
+      pr.tipoprioridad AS prioridad,
+      COALESCE(hprof.horainicio::text, hps.horainicio::text) AS horainicio_base,
+      COALESCE(hprof.horafin::text, hps.horafin::text) AS horafin_base,
+      COALESCE(mprof.nombre, mps.nombre, 'Psicologo') AS materia,
+      TRIM(CONCAT(
+        COALESCE(prof.nombres, ps.nombres, ''),
+        ' ',
+        COALESCE(prof.apellidopaterno, ps.apellidopaterno, ''),
+        ' ',
+        COALESCE(prof.apellidomaterno, ps.apellidomaterno, '')
+      )) AS profesional
+    FROM reservarentrevista re
+    JOIN motivo m ON re.idmotivo = m.idmotivo
+    LEFT JOIN prioridad pr ON m.idprioridad = pr.idprioridad
+    LEFT JOIN profesor prof ON re.idprofesor = prof.idprofesor
+    LEFT JOIN psicologo ps ON re.idpsicologo = ps.idpsicologo
+    LEFT JOIN horario hprof ON prof.idhorario = hprof.idhorario
+    LEFT JOIN materia mprof ON hprof.idmateria = mprof.idmateria
+    LEFT JOIN horario hps ON ps.idhorario = hps.idhorario
+    LEFT JOIN materia mps ON COALESCE(ps.idmateria, hps.idmateria) = mps.idmateria
+    WHERE re.fecha = $1::date
+      AND re.idestado = 1
+      AND COALESCE(re.agenda_cerrada, FALSE) = FALSE
+      AND COALESCE(re.correo_enviado, FALSE) = FALSE
+    ORDER BY
+      CASE WHEN re.idprofesor IS NOT NULL THEN 1 ELSE 2 END,
+      COALESCE(re.idprofesor, 0),
+      COALESCE(re.idpsicologo, 0),
+      CASE
+        WHEN LOWER(COALESCE(pr.tipoprioridad, '')) = 'alta' THEN 1
+        WHEN LOWER(COALESCE(pr.tipoprioridad, '')) = 'media' THEN 2
+        ELSE 3
+      END,
+      re.idreservarentrevista ASC;
+  `,
+    [fecha]
+  );
+
+export const marcarEntrevistaComoCerradaYNotificada = ({
+  idReservarEntrevista,
+  horaInicioConfirmada,
+  horaFinConfirmada,
+}) =>
+  pool.query(
+    `
+    UPDATE reservarentrevista
+    SET
+      hora_inicio_confirmada = $1::time,
+      hora_fin_confirmada = $2::time,
+      agenda_cerrada = TRUE,
+      agenda_cerrada_en = COALESCE(agenda_cerrada_en, NOW()),
+      correo_enviado = TRUE,
+      correo_enviado_en = COALESCE(correo_enviado_en, NOW())
+    WHERE idreservarentrevista = $3
+    RETURNING idreservarentrevista;
+  `,
+    [horaInicioConfirmada, horaFinConfirmada, idReservarEntrevista]
+  );
+
 export const fetchProfesorNombre = (idProfesor) =>
   pool.query(
     `SELECT nombres, apellidopaterno, apellidomaterno 
@@ -321,6 +391,11 @@ export const fetchEntrevistasPorPadre = (idPadre) =>
       COALESCE(mprof.nombre, mps.nombre, 'Psicologo') AS materia,
       COALESCE(hprof.horainicio::text, hps.horainicio::text) AS horainicio,
       COALESCE(hprof.horafin::text, hps.horafin::text) AS horafin,
+      TO_CHAR(re.hora_inicio_confirmada, 'HH24:MI:SS') AS horainicioentrevista,
+      TO_CHAR(re.hora_fin_confirmada, 'HH24:MI:SS') AS horafinentrevista,
+      COALESCE(re.agenda_cerrada, FALSE) AS agenda_cerrada,
+      COALESCE(re.correo_enviado, FALSE) AS correo_enviado,
+      TO_CHAR(re.agenda_cerrada_en, 'YYYY-MM-DD"T"HH24:MI:SS') AS agenda_cerrada_en,
       COALESCE(te.nombre, 'Pendiente') AS estado,
       ar.idacta AS acta_id,
       TO_CHAR(ar.fechadecreacion, 'YYYY-MM-DD') AS acta_fechadecreacion,

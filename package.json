@@ -5,8 +5,14 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "dev": "nodemon --env-file .env src/index.js",
-    "start": "node src/index.js"
+    "dev": "nodemon --env-file .env src/index.js --db=local",
+    "dev:local": "nodemon --env-file .env src/index.js --db=local",
+    "dev:prod": "nodemon --env-file .env src/index.js --db=production",
+    "start": "node src/index.js --db=local",
+    "start:local": "node src/index.js --db=local",
+    "start:prod": "node src/index.js --db=production",
+    "job:cierre-agenda": "node src/jobs/runEntrevistaCierreNow.js --db=local",
+    "job:cierre-agenda:prod": "node src/jobs/runEntrevistaCierreNow.js --db=production"
   },
   "author": "",
   "license": "ISC",

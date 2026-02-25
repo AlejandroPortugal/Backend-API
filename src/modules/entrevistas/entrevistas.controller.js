@@ -6,6 +6,47 @@ const sendUsecaseError = (res, result, fallbackMessage) => {
   return true;
 };
 
+const DEFAULT_CRON_TIMEZONE = "America/La_Paz";
+
+const resolveFechaPorZonaHoraria = (timeZone = DEFAULT_CRON_TIMEZONE) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+const getCronSecretFromRequest = (req) =>
+  req.headers["x-cron-secret"] ||
+  req.headers["x-job-secret"] ||
+  req.query?.token ||
+  req.body?.token ||
+  null;
+
+export const ejecutarCierreAgendaEntrevistas = async (req, res) => {
+  try {
+    const configuredSecret = process.env.CRON_SECRET || null;
+    const providedSecret = getCronSecretFromRequest(req);
+
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: "Token de cron no valido." });
+    }
+
+    const timeZone = process.env.EMAIL_JOB_TZ || DEFAULT_CRON_TIMEZONE;
+    const fecha = req.body?.fecha || req.query?.fecha || resolveFechaPorZonaHoraria(timeZone);
+    const result = await entrevistasUsecase.procesarCierreAgendaEntrevistas(fecha);
+
+    if (sendUsecaseError(res, result, "No se pudo procesar el cierre de agenda")) return;
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    console.error("Error al ejecutar cierre de agenda:", error);
+    return res.status(500).json({ error: "Error al ejecutar el cierre de agenda." });
+  }
+};
+
 export const agendarEntrevista = async (req, res) => {
   try {
     const result = await entrevistasUsecase.agendarEntrevista(req.body);

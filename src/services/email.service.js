@@ -9,11 +9,12 @@ const PROVIDER_ORDER = [
 const transportCache = new Map();
 
 const toBoolean = (value) => String(value ?? "").toLowerCase() === "true";
+const normalizeSecret = (value) => String(value ?? "").trim();
 
 const buildProviderConfig = ({ prefix, fallbackName }) => {
   const host = process.env[`${prefix}_HOST`];
   const user = process.env[`${prefix}_USER`];
-  const pass = process.env[`${prefix}_PASS`];
+  const pass = normalizeSecret(process.env[`${prefix}_PASS`]);
 
   if (!host || !user || !pass) return null;
 
@@ -33,8 +34,37 @@ const buildProviderConfig = ({ prefix, fallbackName }) => {
   };
 };
 
-const getConfiguredProviders = () =>
-  PROVIDER_ORDER.map(buildProviderConfig).filter(Boolean);
+const buildLegacyMailConfig = () => {
+  const user = process.env.MAIL_USER || process.env.SMTP_USER || null;
+  const pass = normalizeSecret(
+    process.env.MAIL_PASSWORD || process.env.MAIL_PASS || process.env.SMTP_PASS
+  );
+
+  if (!user || !pass) return null;
+
+  const host = process.env.MAIL_HOST || "smtp.gmail.com";
+  const portRaw = process.env.MAIL_PORT;
+  const port = portRaw ? Number(portRaw) : 587;
+  const secure = toBoolean(process.env.MAIL_SECURE);
+  const from = process.env.MAIL_FROM || user;
+
+  return {
+    name: "legacy-mail",
+    host,
+    port: Number.isNaN(port) ? 587 : port,
+    secure,
+    auth: { user, pass },
+    from,
+  };
+};
+
+const getConfiguredProviders = () => {
+  const providers = PROVIDER_ORDER.map(buildProviderConfig).filter(Boolean);
+  if (providers.length > 0) return providers;
+
+  const legacy = buildLegacyMailConfig();
+  return legacy ? [legacy] : [];
+};
 
 const getTransporter = (provider) => {
   if (transportCache.has(provider.name)) {
@@ -60,7 +90,7 @@ export const sendEmailWithFallback = async ({ to, subject, text, html, from }) =
 
   if (!providers.length) {
     throw new Error(
-      "No hay proveedores SMTP configurados. Revisa las variables SMTP_PRIMARY/SECONDARY/TERTIARY."
+      "No hay proveedores SMTP configurados. Revisa SMTP_PRIMARY/SECONDARY/TERTIARY o MAIL_USER/MAIL_PASSWORD."
     );
   }
 

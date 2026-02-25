@@ -1,9 +1,6 @@
 import express from "express";
 import cors from "cors";
 import { PORT } from "./config.js";
-import { pool } from "./db.js";
-
-
 
 import profesorRoutes from './routes/profesor.routes.js';
 import administratorRoutes from './routes/administrator.routes.js';
@@ -23,22 +20,13 @@ import documentRoutes from './routes/document.routes.js'
 import dashboardRoutes from './routes/dashboard.routes.js'
 import actasRoutes from './routes/actas.routes.js'
 import inicioDocenteRoutes from './routes/inicioDocente.routes.js'
-import dotenv from 'dotenv';
-import "dotenv/config";
 import { startEntrevistaEmailJob } from './jobs/entrevistaEmail.job.js';
-
-pool.query("select now()")
-  .then(r => console.log("DB OK:", r.rows[0]))
-  .catch(err => console.error("DB ERROR:", err));
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-
 app.get("/health", (req,res)=>res.status(200).json({ok:true}));
-app.use(cors());
-app.use(express.json());
 app.use(profesorRoutes);
 app.use(administratorRoutes);
 app.use(padresDeFamiliaRoutes);
@@ -59,7 +47,8 @@ app.use(actasRoutes);
 app.use(inicioDocenteRoutes);
 
 startEntrevistaEmailJob();
-app.listen(PORT);
-console.log(`Servidor corriendo en el puerto`, PORT);
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
+});
 
 

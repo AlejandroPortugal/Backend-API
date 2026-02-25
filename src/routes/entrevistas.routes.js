@@ -1,6 +1,7 @@
 import Router from 'express';
 import {
   agendarEntrevista,
+  ejecutarCierreAgendaEntrevistas,
   eliminarEntrevista,
   insertarReservaEntrevista,
   obtenerColaEsperaPrioridadFIFO,
@@ -21,6 +22,7 @@ router.get('/listaEntrevistas/:fecha', obtenerListaEntrevistaPorFecha);
 
 router.get('/entrevistas/fechas-habilitadas', obtenerFechasHabilitadas);
 
+router.post('/jobs/entrevistas/cierre-agenda', ejecutarCierreAgendaEntrevistas);
 
 router.get('/verEntrevistasPadres/:idPadre', verEntrevistasPadres);
 

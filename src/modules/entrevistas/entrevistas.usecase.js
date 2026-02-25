@@ -219,6 +219,36 @@ const getEstadoId = async (nombre) => {
   return insertResult.rows[0].id;
 };
 
+const getDuracionPorPrioridad = (prioridad) => {
+  const value = (prioridad || "").toString().trim().toLowerCase();
+  if (value === "alta") return 25;
+  if (value === "media") return 20;
+  return 10;
+};
+
+const parseTimeToMinutes = (timeValue) => {
+  if (!timeValue) return null;
+  const [hoursRaw, minutesRaw] = String(timeValue).split(":");
+  const hours = Number(hoursRaw);
+  const minutes = Number(minutesRaw);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
+};
+
+const formatMinutesToTime = (totalMinutes) => {
+  if (!Number.isFinite(totalMinutes)) return null;
+  const safeMinutes = Math.max(0, Math.floor(totalMinutes));
+  const hours = Math.floor(safeMinutes / 60);
+  const minutes = safeMinutes % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
+};
+
+const getGrupoProfesionalKey = (entrevista) => {
+  if (entrevista?.idprofesor) return `profesor:${entrevista.idprofesor}`;
+  if (entrevista?.idpsicologo) return `psicologo:${entrevista.idpsicologo}`;
+  return "sin-profesional";
+};
+
 export const agendarEntrevista = async (payload) => {
   const {
     idProfesor,
@@ -1427,6 +1457,130 @@ export const obtenerListaEntrevistaPorRango = async (startDate, endDate) => {
       500,
       `Error al obtener la lista de entrevistas: ${error.message}`
     );
+  }
+};
+
+export const procesarCierreAgendaEntrevistas = async (fecha) => {
+  try {
+    if (!fecha) {
+      return fail(400, "La fecha es obligatoria para procesar el cierre de agenda.");
+    }
+
+    const entrevistasPendientesResult =
+      await repository.fetchEntrevistasPendientesParaCierre(fecha);
+    const pendientes = Array.isArray(entrevistasPendientesResult?.rows)
+      ? entrevistasPendientesResult.rows
+      : [];
+
+    if (pendientes.length === 0) {
+      return ok({
+        fecha,
+        totalPendientes: 0,
+        procesadas: 0,
+        correosEnviados: 0,
+        errores: [],
+      });
+    }
+
+    const grupos = new Map();
+    for (const entrevista of pendientes) {
+      const key = getGrupoProfesionalKey(entrevista);
+      if (!grupos.has(key)) {
+        grupos.set(key, []);
+      }
+      grupos.get(key).push(entrevista);
+    }
+
+    let procesadas = 0;
+    let correosEnviados = 0;
+    const errores = [];
+
+    for (const [key, entrevistasGrupo] of grupos.entries()) {
+      const primera = entrevistasGrupo[0] || {};
+      const inicioMinutos = parseTimeToMinutes(primera.horainicio_base);
+      const finMinutos = parseTimeToMinutes(primera.horafin_base);
+
+      if (inicioMinutos === null || finMinutos === null) {
+        for (const entrevista of entrevistasGrupo) {
+          errores.push({
+            idreservarentrevista: entrevista.idreservarentrevista,
+            motivo: "El profesional no tiene un horario valido para cierre de agenda.",
+          });
+        }
+        continue;
+      }
+
+      let horaActualMinutos = inicioMinutos;
+
+      for (const entrevista of entrevistasGrupo) {
+        const duracion = getDuracionPorPrioridad(entrevista.prioridad);
+        const horaInicioEntrevista = formatMinutesToTime(horaActualMinutos);
+        const horaFinEntrevista = formatMinutesToTime(horaActualMinutos + duracion);
+        horaActualMinutos += duracion;
+
+        const horaFinEntrevistaMinutos = parseTimeToMinutes(horaFinEntrevista);
+        if (
+          horaInicioEntrevista === null ||
+          horaFinEntrevista === null ||
+          horaFinEntrevistaMinutos === null ||
+          horaFinEntrevistaMinutos > finMinutos
+        ) {
+          errores.push({
+            idreservarentrevista: entrevista.idreservarentrevista,
+            motivo: "La entrevista excede el horario permitido y no pudo cerrarse.",
+          });
+          continue;
+        }
+
+        try {
+          const profesionalTitulo = entrevista.idpsicologo
+            ? "Psicologo"
+            : "Profesor";
+
+          await enviarCorreoPadres({
+            idPadre: entrevista.idpadre,
+            motivo: entrevista.nombremotivo || "Sin motivo",
+            materia: entrevista.materia || "Materia no especificada",
+            fecha: entrevista.fecha || fecha,
+            horario: horaInicioEntrevista,
+            horafin: horaFinEntrevista,
+            descripcion: entrevista.descripcion || "",
+            profesor: entrevista.profesional || "Profesional IDEB",
+            profesionalTitulo,
+          });
+
+          await repository.marcarEntrevistaComoCerradaYNotificada({
+            idReservarEntrevista: entrevista.idreservarentrevista,
+            horaInicioConfirmada: horaInicioEntrevista,
+            horaFinConfirmada: horaFinEntrevista,
+          });
+
+          procesadas += 1;
+          correosEnviados += 1;
+        } catch (error) {
+          console.error(
+            `Error al cerrar y notificar la entrevista ${entrevista.idreservarentrevista}:`,
+            error?.message || error
+          );
+          errores.push({
+            idreservarentrevista: entrevista.idreservarentrevista,
+            motivo: "Fallo el envio de correo o la actualizacion de cierre.",
+          });
+        }
+      }
+    }
+
+    return ok({
+      fecha,
+      totalPendientes: pendientes.length,
+      procesadas,
+      correosEnviados,
+      gruposProcesados: grupos.size,
+      errores,
+    });
+  } catch (error) {
+    console.error("Error al procesar cierre de agenda:", error);
+    return fail(500, "No se pudo procesar el cierre de agenda de entrevistas.");
   }
 };
 
