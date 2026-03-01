@@ -54,12 +54,12 @@ export const registrarIngreso = async ({
   idUsuario,
   nombreCompleto,
   rol,
-  fechaIngreso,
-  horaIngreso,
 }) => {
-  if (!idUsuario || !nombreCompleto || !rol || !fechaIngreso || !horaIngreso) {
+  if (!idUsuario || !nombreCompleto || !rol) {
     return fail(400, "Faltan datos para registrar el ingreso");
   }
+
+  const normalizedRole = String(rol || "").trim();
 
   const roleColumnMap = {
     Administrador: "idadministrador",
@@ -67,18 +67,27 @@ export const registrarIngreso = async ({
     Psicologo: "idpsicologo",
   };
 
-  const actorColumn = roleColumnMap[rol];
+  const actorColumn = roleColumnMap[normalizedRole];
   if (!actorColumn) {
     return fail(400, "Rol no valido para registrar ingreso");
   }
 
+  const actorId = Number(idUsuario);
+  if (!Number.isInteger(actorId) || actorId <= 0) {
+    return fail(400, "ID de usuario no valido para registrar ingreso");
+  }
+
+  const actorIds = {
+    idprofesor: normalizedRole === "Profesor" ? actorId : 0,
+    idadministrador: normalizedRole === "Administrador" ? actorId : 0,
+    idpsicologo: normalizedRole === "Psicologo" ? actorId : 0,
+  };
+
   await repository.insertIngreso({
-    idUsuario,
+    idUsuario: actorId,
     nombreCompleto,
-    rol,
-    fechaIngreso,
-    horaIngreso,
-    actorColumn,
+    rol: normalizedRole,
+    ...actorIds,
   });
 
   return ok(null);

@@ -159,47 +159,70 @@ export const filterUsers = (searchTerm) =>
     [`%${searchTerm}%`]
   );
 
-export const insertIngreso = ({ idUsuario, nombreCompleto, rol, fechaIngreso, horaIngreso, actorColumn }) =>
+export const insertIngreso = ({
+  idUsuario,
+  nombreCompleto,
+  rol,
+  idprofesor,
+  idadministrador,
+  idpsicologo,
+}) =>
   pool.query(
     `
-    INSERT INTO ingresos (idusuario, ${actorColumn}, nombrecompleto, rol, fechaingreso, horaingreso)
-    VALUES ($1, $1, $2, $3, $4, $5)
+    INSERT INTO ingresos (
+      idusuario,
+      nombrecompleto,
+      rol,
+      fechaingreso,
+      horaingreso,
+      idprofesor,
+      idadministrador,
+      idpsicologo
+    )
+    VALUES (
+      $1,
+      $2,
+      $3,
+      (TIMEZONE('America/La_Paz', NOW()))::date,
+      (TIMEZONE('America/La_Paz', NOW()))::time(0),
+      $4,
+      $5,
+      $6
+    )
   `,
-    [idUsuario, nombreCompleto, rol, fechaIngreso, horaIngreso]
+    [idUsuario, nombreCompleto, rol, idprofesor, idadministrador, idpsicologo]
   );
 
 export const fetchIngresos = () =>
   pool.query(`
-    SELECT idusuario, nombrecompleto, rol, fechaingreso, horaingreso
+    SELECT
+      id,
+      idusuario,
+      nombrecompleto,
+      rol,
+      TO_CHAR(fechaingreso, 'YYYY-MM-DD') AS fechaingreso,
+      TO_CHAR(horaingreso, 'HH24:MI:SS') AS horaingreso,
+      COALESCE(idprofesor, 0) AS idprofesor,
+      COALESCE(idadministrador, 0) AS idadministrador,
+      COALESCE(idpsicologo, 0) AS idpsicologo
     FROM ingresos
+    ORDER BY id DESC
   `);
 
 export const fetchIngresosConUsuarios = () =>
   pool.query(`
     SELECT
+      i.id,
       i.idusuario,
-      CONCAT(u.nombres, ' ', u.apellidopaterno, ' ', u.apellidomaterno) AS nombreCompleto,
-      u.rol,
-      i.fechaingreso,
-      i.horaingreso
+      i.nombrecompleto,
+      i.rol,
+      TO_CHAR(i.fechaingreso, 'YYYY-MM-DD') AS fechaingreso,
+      TO_CHAR(i.horaingreso, 'HH24:MI:SS') AS horaingreso,
+      COALESCE(i.idprofesor, 0) AS idprofesor,
+      COALESCE(i.idadministrador, 0) AS idadministrador,
+      COALESCE(i.idpsicologo, 0) AS idpsicologo
     FROM ingresos i
-    JOIN (
-      SELECT
-        idadministrador AS idusuario, nombres, apellidopaterno, apellidomaterno, rol
-      FROM administrador
-      WHERE estado = true
-      UNION ALL
-      SELECT
-        idprofesor AS idusuario, nombres, apellidopaterno, apellidomaterno, rol
-      FROM profesor
-      WHERE estado = true
-      UNION ALL
-      SELECT
-        idpsicologo AS idusuario, nombres, apellidopaterno, apellidomaterno, rol
-      FROM psicologo
-      WHERE estado = true
-    ) u
-    ON i.idusuario = u.idusuario;
+    ORDER BY i.id DESC;
   `);
 
 export const fetchIngresosPorRango = (startDate, endDate) =>
@@ -219,25 +242,17 @@ export const fetchIngresosPorRango = (startDate, endDate) =>
 
 export const fetchCantidadUsuariosConIngresos = () =>
   pool.query(`
-    SELECT COUNT(*) AS cantidad
-    FROM ingresos i
-    JOIN (
-      SELECT
-        idadministrador AS idusuario, nombres, apellidopaterno, apellidomaterno, rol
-      FROM administrador
-      WHERE estado = true
-      UNION ALL
-      SELECT
-        idprofesor AS idusuario, nombres, apellidopaterno, apellidomaterno, rol
-      FROM profesor
-      WHERE estado = true
-      UNION ALL
-      SELECT
-        idpsicologo AS idusuario, nombres, apellidopaterno, apellidomaterno, rol
-      FROM psicologo
-      WHERE estado = true
-    ) u
-    ON i.idusuario = u.idusuario;
+    SELECT COUNT(DISTINCT CONCAT(
+      i.rol,
+      ':',
+      COALESCE(
+        i.idprofesor::text,
+        i.idadministrador::text,
+        i.idpsicologo::text,
+        i.idusuario::text
+      )
+    )) AS cantidad
+    FROM ingresos i;
   `);
 
 export const fetchUsuariosInactivos = () =>

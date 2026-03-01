@@ -51,6 +51,48 @@ export const insertActa = ({
     ]
   );
 
+export const fetchReservaTrackingById = (idReservarEntrevista) =>
+  pool.query(
+    `
+    SELECT
+      re.idreservarentrevista,
+      re.idprofesor,
+      re.idpsicologo
+    FROM reservarentrevista re
+    WHERE re.idreservarentrevista = $1
+    LIMIT 1
+  `,
+    [idReservarEntrevista]
+  );
+
+export const fetchTiempoAtencionByReserva = (idReservarEntrevista) =>
+  pool.query(
+    `
+    SELECT
+      idtiempoatencion,
+      idreservarentrevista,
+      inicioentrevista,
+      duracionatencion
+    FROM tiempoatencion
+    WHERE idreservarentrevista = $1
+    ORDER BY idtiempoatencion DESC
+    LIMIT 1
+  `,
+    [idReservarEntrevista]
+  );
+
+export const finalizeTiempoAtencionById = (idTiempoAtencion, duracionAtencion) =>
+  pool.query(
+    `
+    UPDATE tiempoatencion
+    SET duracionatencion = $2::time,
+        estado = TRUE
+    WHERE idtiempoatencion = $1
+    RETURNING idtiempoatencion
+  `,
+    [idTiempoAtencion, duracionAtencion]
+  );
+
 export const updateActa = ({
   idreservarentrevista,
   idmotivo,

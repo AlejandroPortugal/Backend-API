@@ -22,6 +22,17 @@ const normalizeNullableText = (value) => {
   return text;
 };
 
+const durationMsToTimeString = (durationMs) => {
+  if (!Number.isFinite(durationMs) || durationMs < 0) return null;
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(
+    seconds
+  ).padStart(2, "0")}`;
+};
+
 export const obtenerActasReunion = async () => {
   const { rows } = await repository.fetchAllActas();
   return ok(rows);
@@ -66,6 +77,31 @@ export const crearActaReunion = async (payload) => {
     idestudiante,
     idmateria,
   });
+
+  const reservaTracking = await repository.fetchReservaTrackingById(idreservarentrevista);
+  const reserva = reservaTracking.rows[0] || null;
+
+  if (reserva?.idreservarentrevista) {
+    const tiempoAtencionResult = await repository.fetchTiempoAtencionByReserva(
+      reserva.idreservarentrevista
+    );
+    const tiempoAtencion = tiempoAtencionResult.rows[0] || null;
+
+    if (tiempoAtencion?.inicioentrevista) {
+      const inicio = new Date(tiempoAtencion.inicioentrevista);
+      if (!Number.isNaN(inicio.getTime())) {
+        const elapsedMs = Date.now() - inicio.getTime();
+        const duracionAtencion = durationMsToTimeString(elapsedMs);
+
+        if (duracionAtencion) {
+          await repository.finalizeTiempoAtencionById(
+            tiempoAtencion.idtiempoatencion,
+            duracionAtencion
+          );
+        }
+      }
+    }
+  }
 
   return ok(result.rows[0]);
 };

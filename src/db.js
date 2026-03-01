@@ -84,6 +84,32 @@ const remotePoolConfig = {
 
 const poolConfig = isLocal ? localPoolConfig : remotePoolConfig;
 
+if (isLocal) {
+  console.log(
+    `[DB] Modo activo: local (fuente: ${DB_MODE_SOURCE}) -> ${localPoolConfig.host}:${localPoolConfig.port}/${localPoolConfig.database}`
+  );
+  console.log("[DB] Credenciales local:", {
+    user: localPoolConfig.user,
+    password: localPoolConfig.password,
+  });
+} else {
+  try {
+    const parsed = new URL(remoteConnectionString);
+    const remoteDb = parsed.pathname.replace("/", "") || "postgres";
+    console.log(
+      `[DB] Modo activo: production (fuente: ${DB_MODE_SOURCE}) -> ${parsed.hostname}:${parsed.port || 5432}/${remoteDb}`
+    );
+    console.log("[DB] Credenciales remotas:", {
+      user: parsed.username,
+      password: parsed.password,
+    });
+  } catch {
+    console.log(
+      `[DB] Modo activo: production (fuente: ${DB_MODE_SOURCE}) con DATABASE_URL invalida.`
+    );
+  }
+}
+
 export const pool = new pg.Pool(poolConfig);
 
 pool.on("error", (error) => {

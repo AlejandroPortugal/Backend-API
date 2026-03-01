@@ -85,6 +85,25 @@ export const obtenerColaEsperaPrioridadFIFO = async (req, res) => {
   }
 };
 
+export const obtenerMetricasCola = async (req, res) => {
+  try {
+    const result = await entrevistasUsecase.obtenerMetricasCola({
+      fecha: req.query.fecha,
+      idProfesor: req.query.idProfesor,
+      idPsicologo: req.query.idPsicologo,
+    });
+    if (sendUsecaseError(res, result, "Error al obtener las metricas de cola")) {
+      return;
+    }
+    res.status(200).json(result.data);
+  } catch (error) {
+    console.error("Error al obtener las metricas de cola:", error.message);
+    res.status(500).json({
+      error: `Error al obtener las metricas de cola: ${error.message}`,
+    });
+  }
+};
+
 export const obtenerListaEntrevistaPorFecha = async (req, res) => {
   const { fecha } = req.params;
   const { idProfesor, idPsicologo } = req.query;

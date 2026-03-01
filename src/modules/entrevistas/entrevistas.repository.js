@@ -88,10 +88,16 @@ export const fetchHorarioByProfesional = ({ idProfesor, idPsicologo }) => {
 
 export const fetchEntrevistasPrevias = (fecha, idProfesor, idPsicologo) =>
   pool.query(
-    `SELECT re.idreservarentrevista, re.idpadre, m.nombremotivo, pr.tipoprioridad AS prioridad
+    `SELECT re.idreservarentrevista,
+            re.idpadre,
+            re.idestudiante,
+            TRIM(CONCAT(e.nombres, ' ', e.apellidopaterno, ' ', e.apellidomaterno)) AS nombre_estudiante,
+            m.nombremotivo,
+            pr.tipoprioridad AS prioridad
      FROM reservarentrevista re
      JOIN motivo m ON re.idmotivo = m.idmotivo
      JOIN prioridad pr ON m.idprioridad = pr.idprioridad
+     LEFT JOIN estudiante e ON e.idestudiante = re.idestudiante
      WHERE re.fecha = $1
      AND re.idestado <> 3
      AND (
@@ -103,6 +109,24 @@ export const fetchEntrevistasPrevias = (fecha, idProfesor, idPsicologo) =>
                 WHEN pr.tipoprioridad = 'Media' THEN 2
                 ELSE 3 
               END, re.idreservarentrevista`,
+    [fecha, idProfesor, idPsicologo]
+  );
+
+export const fetchAgendaCerradaPorFechaYProfesional = (
+  fecha,
+  idProfesor,
+  idPsicologo
+) =>
+  pool.query(
+    `SELECT 1
+     FROM reservarentrevista re
+     WHERE re.fecha = $1
+       AND COALESCE(re.agenda_cerrada, FALSE) = TRUE
+       AND (
+         (re.idprofesor = $2 AND $2 IS NOT NULL) OR
+         (re.idpsicologo = $3 AND $3 IS NOT NULL)
+       )
+     LIMIT 1`,
     [fecha, idProfesor, idPsicologo]
   );
 
@@ -119,7 +143,8 @@ export const insertReservaEntrevista = ({
   pool.query(
     `INSERT INTO reservarentrevista 
      (idprofesor, idpsicologo, idpadre, idestudiante, fecha, descripcion, idmotivo, idestado) 
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING idreservarentrevista`,
     [idProfesor, idPsicologo, idPadre, idEstudiante, fecha, descripcion, idMotivo, idEstado]
   );
 
@@ -127,6 +152,14 @@ export const fetchPadreContacto = (idPadre) =>
   pool.query(
     "SELECT nombres, apellidopaterno, apellidomaterno, email FROM padredefamilia WHERE idpadre = $1",
     [idPadre]
+  );
+
+export const fetchEstudianteNombre = (idEstudiante) =>
+  pool.query(
+    `SELECT TRIM(CONCAT(nombres, ' ', apellidopaterno, ' ', apellidomaterno)) AS nombre
+     FROM estudiante
+     WHERE idestudiante = $1`,
+    [idEstudiante]
   );
 
 export const fetchProfesorContacto = (idProfesor) =>
@@ -239,6 +272,120 @@ export const fetchEntrevistasPorFechaYProfesional = (fecha, idProfesor, idPsicol
 export const fetchPadreEmail = (idPadre) =>
   pool.query("SELECT email FROM padredefamilia WHERE idpadre = $1", [idPadre]);
 
+export const fetchTiempoAtencionProfesional = (idProfesor, idPsicologo) =>
+  pool.query(
+    `SELECT duracionatencion::text AS duracionatencion
+     FROM tiempoatencion
+     WHERE COALESCE(estado, TRUE) = TRUE
+       AND (
+         (idprofesor = $1 AND $1 IS NOT NULL) OR
+         (idpsicologo = $2 AND $2 IS NOT NULL)
+       )
+     ORDER BY inicioentrevista DESC NULLS LAST, idtiempoatencion DESC
+     LIMIT 1`,
+    [idProfesor, idPsicologo]
+  );
+
+export const startTiempoAtencionEntrevista = (
+  idReservarEntrevista,
+  idProfesor,
+  idPsicologo
+) =>
+  pool.query(
+    `
+    WITH updated AS (
+      UPDATE tiempoatencion
+      SET inicioentrevista = NOW(),
+          duracionatencion = NULL,
+          estado = TRUE
+      WHERE idreservarentrevista = $1
+      RETURNING idtiempoatencion
+    )
+    INSERT INTO tiempoatencion (
+      idreservarentrevista,
+      idprofesor,
+      idpsicologo,
+      inicioentrevista,
+      duracionatencion,
+      estado
+    )
+    SELECT $1, $2, $3, NOW(), NULL, TRUE
+    WHERE NOT EXISTS (SELECT 1 FROM updated)
+    RETURNING idtiempoatencion;
+    `,
+    [idReservarEntrevista, idProfesor, idPsicologo]
+  );
+
+export const fetchTiempoAtencionProfesor = (idProfesor) =>
+  pool.query(
+    `SELECT duracionatencion::text AS duracionatencion
+     FROM tiempoatencion
+     WHERE idprofesor = $1
+       AND COALESCE(estado, TRUE) = TRUE
+     ORDER BY idtiempoatencion DESC
+     LIMIT 1`,
+    [idProfesor]
+  );
+
+export const upsertColaEspera = (idReservarEntrevista, tiempoEsperaEstimado) =>
+  pool.query(
+    `
+    WITH updated AS (
+      UPDATE colaespera
+      SET tiempoesperaestimado = $2::interval,
+          estado = TRUE
+      WHERE idreservarentrevista = $1
+      RETURNING idcolaespera
+    )
+    INSERT INTO colaespera (idreservarentrevista, tiempoesperaestimado, estado)
+    SELECT $1, $2::interval, TRUE
+    WHERE NOT EXISTS (SELECT 1 FROM updated)
+    RETURNING idcolaespera;
+    `,
+    [idReservarEntrevista, tiempoEsperaEstimado]
+  );
+
+export const fetchMetricasColaPorFechaYProfesional = (
+  fecha,
+  idProfesor,
+  idPsicologo
+) =>
+  pool.query(
+    `SELECT
+       re.idreservarentrevista,
+       pr.tipoprioridad AS prioridad,
+       re.creado_en,
+       re.hora_inicio_confirmada::text AS hora_inicio_confirmada,
+       re.hora_fin_confirmada::text AS hora_fin_confirmada,
+       ce.tiempoespera_min
+     FROM reservarentrevista re
+     JOIN motivo m ON re.idmotivo = m.idmotivo
+     JOIN prioridad pr ON m.idprioridad = pr.idprioridad
+     LEFT JOIN LATERAL (
+       SELECT EXTRACT(EPOCH FROM c.tiempoesperaestimado) / 60.0 AS tiempoespera_min
+       FROM colaespera c
+       WHERE c.idreservarentrevista = re.idreservarentrevista
+         AND COALESCE(c.estado, TRUE) = TRUE
+       ORDER BY c.idcolaespera DESC
+       LIMIT 1
+     ) ce ON TRUE
+     WHERE TO_CHAR(re.fecha, 'YYYY-MM-DD') = $1
+       AND re.idestado <> 3
+       AND (
+         (re.idprofesor = $2 AND $2 IS NOT NULL) OR
+         (re.idpsicologo = $3 AND $3 IS NOT NULL)
+       )
+     ORDER BY
+       CASE
+         WHEN LOWER(COALESCE(pr.tipoprioridad, '')) = 'alta' THEN 1
+         WHEN LOWER(COALESCE(pr.tipoprioridad, '')) = 'media' THEN 2
+         ELSE 3
+       END,
+       re.creado_en ASC,
+       re.idreservarentrevista ASC`,
+    [fecha, idProfesor, idPsicologo]
+  );
+
 export const fetchEntrevistasPendientesParaCierre = (fecha) =>
   pool.query(
     `
@@ -248,12 +395,20 @@ export const fetchEntrevistasPendientesParaCierre = (fecha) =>
       re.idpadre,
       re.idprofesor,
       re.idpsicologo,
+      re.idestudiante,
       re.descripcion,
       m.nombremotivo,
       pr.tipoprioridad AS prioridad,
       COALESCE(hprof.horainicio::text, hps.horainicio::text) AS horainicio_base,
       COALESCE(hprof.horafin::text, hps.horafin::text) AS horafin_base,
       COALESCE(mprof.nombre, mps.nombre, 'Psicologo') AS materia,
+      TRIM(CONCAT(
+        COALESCE(est.nombres, ''),
+        ' ',
+        COALESCE(est.apellidopaterno, ''),
+        ' ',
+        COALESCE(est.apellidomaterno, '')
+      )) AS nombre_estudiante,
       TRIM(CONCAT(
         COALESCE(prof.nombres, ps.nombres, ''),
         ' ',
@@ -270,6 +425,7 @@ export const fetchEntrevistasPendientesParaCierre = (fecha) =>
     LEFT JOIN materia mprof ON hprof.idmateria = mprof.idmateria
     LEFT JOIN horario hps ON ps.idhorario = hps.idhorario
     LEFT JOIN materia mps ON COALESCE(ps.idmateria, hps.idmateria) = mps.idmateria
+    LEFT JOIN estudiante est ON est.idestudiante = re.idestudiante
     WHERE re.fecha = $1::date
       AND re.idestado = 1
       AND COALESCE(re.agenda_cerrada, FALSE) = FALSE
@@ -323,6 +479,24 @@ export const fetchPsicologoNombre = (idPsicologo) =>
      FROM psicologo 
      WHERE idpsicologo = $1`,
     [idPsicologo]
+  );
+
+export const fetchEntrevistaTrackingData = (idReservarEntrevista) =>
+  pool.query(
+    `SELECT
+       re.idreservarentrevista,
+       re.idestado,
+       re.idprofesor,
+       re.idpsicologo,
+       TO_CHAR(re.hora_inicio_confirmada, 'HH24:MI:SS') AS hora_inicio_confirmada,
+       TO_CHAR(re.hora_fin_confirmada, 'HH24:MI:SS') AS hora_fin_confirmada,
+       pr.tipoprioridad AS prioridad
+     FROM reservarentrevista re
+     LEFT JOIN motivo m ON re.idmotivo = m.idmotivo
+     LEFT JOIN prioridad pr ON m.idprioridad = pr.idprioridad
+     WHERE re.idreservarentrevista = $1
+     LIMIT 1`,
+    [idReservarEntrevista]
   );
 
 export const updateEntrevistaEstado = (idEstado, idReservarEntrevista) =>

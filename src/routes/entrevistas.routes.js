@@ -5,6 +5,7 @@ import {
   eliminarEntrevista,
   insertarReservaEntrevista,
   obtenerColaEsperaPrioridadFIFO,
+  obtenerMetricasCola,
   obtenerFechasHabilitadas,
   obtenerListaEntrevistaPorFecha,
   obtenerListaEntrevistaPorRango,
@@ -17,6 +18,7 @@ const router = Router();
 router.post('/agendarEntrevista', agendarEntrevista);
 
 router.get('/colaEspera', obtenerColaEsperaPrioridadFIFO);
+router.get('/colaEspera/metricas', obtenerMetricasCola);
 
 router.get('/listaEntrevistas/:fecha', obtenerListaEntrevistaPorFecha);
 

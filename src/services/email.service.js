@@ -85,7 +85,14 @@ const getTransporter = (provider) => {
   return transporter;
 };
 
-export const sendEmailWithFallback = async ({ to, subject, text, html, from }) => {
+export const sendEmailWithFallback = async ({
+  to,
+  subject,
+  text,
+  html,
+  from,
+  attachments,
+}) => {
   const providers = getConfiguredProviders();
 
   if (!providers.length) {
@@ -107,6 +114,7 @@ export const sendEmailWithFallback = async ({ to, subject, text, html, from }) =
         subject,
         text,
         html,
+        attachments,
       });
 
       return { provider: provider.name, from: resolvedFrom };

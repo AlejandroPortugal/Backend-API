@@ -126,6 +126,7 @@ export const fetchProfesoresConHorarios = () =>
     SELECT
       'Profesor' AS tipo,
       p.idprofesor AS id,
+      h.idhorario,
       CONCAT(p.nombres, ' ', p.apellidopaterno, ' ', p.apellidomaterno) AS nombre,
       m.nombre AS materia,
       h.dia,
@@ -144,6 +145,7 @@ export const fetchPsicologosConHorarios = () =>
     SELECT
       'Psicologo' AS tipo,
       ps.idpsicologo AS id,
+      h.idhorario,
       CONCAT(ps.nombres, ' ', ps.apellidopaterno, ' ', ps.apellidomaterno) AS nombre,
       'Psicologo' AS materia,
       h.dia,

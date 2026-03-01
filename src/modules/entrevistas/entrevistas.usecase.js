@@ -1,4 +1,7 @@
 ﻿import * as repository from "./entrevistas.repository.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { sendEmailWithFallback } from "../../services/email.service.js";
 
 const ok = (data) => ({ data });
@@ -55,6 +58,20 @@ const obtenerEntrevistasActivasPorPadreYFecha = async (
     fecha
   );
   return result.rows || [];
+};
+
+const agendaCerradaParaFecha = async ({ fecha, idProfesor, idPsicologo }) => {
+  if (!fecha || (!idProfesor && !idPsicologo)) {
+    return false;
+  }
+
+  const result = await repository.fetchAgendaCerradaPorFechaYProfesional(
+    fecha,
+    idProfesor,
+    idPsicologo
+  );
+
+  return result.rowCount > 0;
 };
 
 const encontrarEntrevistaMismaMateria = ({
@@ -115,11 +132,32 @@ const encontrarEntrevistaMismaMateria = ({
 };
 
 const EMAIL_BRAND_COLOR = "#0f5132";
-const EMAIL_ICON_URL =
-  "https://cdn-icons-png.flaticon.com/512/1047/1047711.png";
+const EMAIL_ICON_CID = "ideb-escudo";
+const EMAIL_ICON_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../../../FRONT/ProyectoDeGradoFront/public/Imgs/png/escudoIdeb.png"
+);
+
+const getEmailBranding = () => {
+  if (!fs.existsSync(EMAIL_ICON_PATH)) {
+    return { iconSrc: "", attachments: [] };
+  }
+
+  return {
+    iconSrc: `cid:${EMAIL_ICON_CID}`,
+    attachments: [
+      {
+        filename: "escudo.png",
+        path: EMAIL_ICON_PATH,
+        cid: EMAIL_ICON_CID,
+      },
+    ],
+  };
+};
 
 const buildEntrevistaEmailContent = ({
   destinatario,
+  estudiante,
   motivo,
   materia,
   fecha,
@@ -127,15 +165,16 @@ const buildEntrevistaEmailContent = ({
   horaFin,
   descripcion,
   profesional,
+  iconSrc,
 }) => {
   const descripcionTexto = (descripcion ?? "").toString().trim();
   const descripcionHtml = descripcionTexto
     ? descripcionTexto.replace(/\n/g, "<br />")
-    : "Sin descripciÃ³n adicional.";
-  const descripcionPlain =
-    descripcionTexto || "Sin descripciÃ³n adicional.";
+    : "Sin descripcion adicional.";
+  const descripcionPlain = descripcionTexto || "Sin descripcion adicional.";
 
   const rows = [
+    { label: "Estudiante", value: estudiante },
     { label: "Motivo", value: motivo },
     { label: "Materia", value: materia },
     { label: "Fecha", value: fecha },
@@ -165,7 +204,11 @@ const buildEntrevistaEmailContent = ({
           <table role="presentation" width="100%">
             <tr>
               <td style="width:56px;">
-                <img src="${EMAIL_ICON_URL}" alt="IDEB" style="width:48px;height:48px;border-radius:50%;border:2px solid #ffffff;display:block;" />
+                ${
+                  iconSrc
+                    ? `<img src="${iconSrc}" alt="Escudo IDEB" style="width:48px;height:48px;display:block;" />`
+                    : ""
+                }
               </td>
               <td style="text-align:right;font-size:20px;font-weight:600;">IDEB</td>
             </tr>
@@ -176,18 +219,18 @@ const buildEntrevistaEmailContent = ({
         <td style="padding:24px;">
           <p style="font-size:16px;color:#0b2e13;margin:0 0 12px;">Estimado(a) ${destinatario},</p>
           <p style="font-size:15px;color:#1f2933;margin:0 0 20px;">
-            Nos comunicamos para confirmarle que se ha registrado una entrevista. A continuaciÃ³n se detalla la informaciÃ³n mÃ¡s relevante:
+            Nos comunicamos para confirmarle que se ha registrado una entrevista. A continuacion se detalla la informacion mas relevante:
           </p>
           <table role="presentation" width="100%" style="border-collapse:collapse;border:1px solid #e9ecef;border-radius:8px;overflow:hidden;">
             ${detailsHtml}
           </table>
           <div style="margin:20px 0;padding:16px;border:1px solid #e9ecef;border-radius:8px;background-color:#f9fafb;">
-            <p style="margin:0 0 8px;font-size:14px;font-weight:600;color:${EMAIL_BRAND_COLOR};">DescripciÃ³n del docente</p>
+            <p style="margin:0 0 8px;font-size:14px;font-weight:600;color:${EMAIL_BRAND_COLOR};">Descripcion del docente</p>
             <p style="margin:0;font-size:14px;line-height:1.6;color:#1f2933;">${descripcionHtml}</p>
           </div>
           <p style="font-size:14px;color:#1f2933;margin:0 0 16px;">Atentamente,<br/>${profesional}</p>
           <div style="text-align:center;font-size:12px;color:#6b7280;border-top:1px solid #e9ecef;padding-top:16px;">
-            Este mensaje fue enviado automÃ¡ticamente por el sistema de entrevistas del IDEB.
+            Este mensaje fue enviado automaticamente por el sistema de entrevistas del IDEB.
           </div>
         </td>
       </tr>
@@ -197,13 +240,13 @@ const buildEntrevistaEmailContent = ({
   const text = [
     `Estimado(a) ${destinatario},`,
     "",
-    "Se registrÃ³ una entrevista con el siguiente detalle:",
+    "Se registro una entrevista con el siguiente detalle:",
     rows
       .filter((row) => row.value)
       .map((row) => `- ${row.label}: ${row.value}`)
       .join("\n"),
     "",
-    `DescripciÃ³n: ${descripcionPlain}`,
+    `Descripcion: ${descripcionPlain}`,
     "",
     `Atentamente, ${profesional}`,
   ].join("\n");
@@ -241,6 +284,23 @@ const formatMinutesToTime = (totalMinutes) => {
   const hours = Math.floor(safeMinutes / 60);
   const minutes = safeMinutes % 60;
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
+};
+
+const formatMinutesToInterval = (totalMinutes) => {
+  if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) return null;
+  const safeMinutes = Math.max(0, Math.floor(totalMinutes));
+  const hours = Math.floor(safeMinutes / 60);
+  const minutes = safeMinutes % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
+};
+
+const persistQueueSupportData = async ({ idReservarEntrevista, duracionMin }) => {
+  if (!idReservarEntrevista) return;
+
+  const duracionInterval = formatMinutesToInterval(duracionMin);
+  if (!duracionInterval) return;
+
+  await repository.upsertColaEspera(idReservarEntrevista, duracionInterval);
 };
 
 const getGrupoProfesionalKey = (entrevista) => {
@@ -340,6 +400,13 @@ export const agendarEntrevista = async (payload) => {
       );
     }
 
+    if (await agendaCerradaParaFecha({ fecha, idProfesor, idPsicologo })) {
+      return fail(
+        400,
+        "La agenda para la fecha seleccionada ya fue cerrada. No se pueden registrar mas entrevistas."
+      );
+    }
+
     // Obtener entrevistas existentes
     const entrevistasPrevias = await repository.fetchEntrevistasPrevias(
       fecha,
@@ -400,6 +467,8 @@ export const agendarEntrevista = async (payload) => {
           idPadre: entrevista.idpadre,
           idProfesor,
           idPsicologo,
+          idEstudiante: entrevista.idestudiante,
+          nombreEstudiante: entrevista.nombre_estudiante,
           motivo: entrevista.nombremotivo,
           materia,
           fecha,
@@ -414,7 +483,7 @@ export const agendarEntrevista = async (payload) => {
       );
     } else {
       const estadoPendienteId = await getEstadoId("Pendiente");
-      await repository.insertReservaEntrevista({
+      const insertResult = await repository.insertReservaEntrevista({
         idProfesor,
         idPsicologo,
         idPadre,
@@ -423,6 +492,11 @@ export const agendarEntrevista = async (payload) => {
         descripcion,
         idMotivo,
         idEstado: estadoPendienteId,
+      });
+      const idReservarEntrevista = insertResult.rows[0]?.idreservarentrevista;
+      await persistQueueSupportData({
+        idReservarEntrevista,
+        duracionMin: duracionAtencion,
       });
 
       console.log("Nueva entrevista insertada correctamente (sin evento virtual).");
@@ -443,6 +517,8 @@ export const enviarCorreoProfesores = async ({
   idPadre,
   idProfesor,
   idPsicologo,
+  idEstudiante,
+  nombreEstudiante,
   motivo,
   materia,
   fecha,
@@ -485,6 +561,12 @@ export const enviarCorreoProfesores = async ({
     const nombresPadre = `${padre.nombres} ${padre.apellidopaterno} ${padre.apellidomaterno}`;
     const emailPadre = padre.email;
 
+    let estudianteNombre = (nombreEstudiante || "").toString().trim();
+    if (!estudianteNombre && idEstudiante) {
+      const estudianteQuery = await repository.fetchEstudianteNombre(idEstudiante);
+      estudianteNombre = (estudianteQuery.rows[0]?.nombre || "").toString().trim();
+    }
+
     // Obtener informaciÃ³n del profesor o psicÃ³logo
     let profesional;
     if (idProfesor) {
@@ -508,21 +590,25 @@ export const enviarCorreoProfesores = async ({
     }
 
     const nombresProfesional = `${profesional.nombres} ${profesional.apellidopaterno} ${profesional.apellidomaterno}`;
+    const { iconSrc, attachments } = getEmailBranding();
 
     const { html, text } = buildEntrevistaEmailContent({
       destinatario: nombresPadre,
+      estudiante: estudianteNombre || "Estudiante no especificado",
       motivo,
       materia,
       fecha,
       horaInicio: horarioInicio,
       descripcion,
-      profesional: `${idProfesor ? "Profesor" : "PsicÃ³logo"}: ${nombresProfesional}`,
+      profesional: `${idProfesor ? "Profesor" : "Psicologo"}: ${nombresProfesional}`,
+      iconSrc,
     });
     const { provider } = await sendEmailWithFallback({
       to: emailPadre,
       subject: "Confirmacion de entrevista IDEB",
       text,
       html,
+      attachments,
     });
     console.log(`Correo enviado a: ${emailPadre} (proveedor: ${provider})`);
   } catch (error) {
@@ -681,6 +767,10 @@ export const obtenerFechasHabilitadas = async (params = {}) => {
 
       if (fecha.getDay() !== dayIndex) continue;
       const fechaIso = fecha.toISOString().split("T")[0];
+
+      if (await agendaCerradaParaFecha({ fecha: fechaIso, idProfesor, idPsicologo })) {
+        continue;
+      }
 
       let disponible = true;
       if (duracionNueva !== null && hasProfesional) {
@@ -1035,6 +1125,13 @@ export const insertarReservaEntrevista = async (payload) => {
       );
     }
 
+    if (await agendaCerradaParaFecha({ fecha, idProfesor, idPsicologo })) {
+      return fail(
+        400,
+        "La agenda para la fecha seleccionada ya fue cerrada. No se pueden registrar mas entrevistas."
+      );
+    }
+
     // Obtener entrevistas existentes para la fecha
     const entrevistasPrevias = await repository.fetchEntrevistasPrevias(
       fecha,
@@ -1137,6 +1234,8 @@ export const insertarReservaEntrevista = async (payload) => {
 
         await enviarCorreoPadres({
           idPadre: entrevista.idpadre,
+          idEstudiante: entrevista.idestudiante,
+          nombreEstudiante: entrevista.nombre_estudiante,
           motivo: entrevista.nombremotivo,
           materia,
           fecha,
@@ -1156,7 +1255,7 @@ export const insertarReservaEntrevista = async (payload) => {
       );
     } else {
       const estadoPendienteId = await getEstadoId("Pendiente");
-      await repository.insertReservaEntrevista({
+      const insertResult = await repository.insertReservaEntrevista({
         idProfesor,
         idPsicologo,
         idPadre,
@@ -1165,6 +1264,11 @@ export const insertarReservaEntrevista = async (payload) => {
         descripcion: descripcionFinal,
         idMotivo,
         idEstado: estadoPendienteId,
+      });
+      const idReservarEntrevista = insertResult.rows[0]?.idreservarentrevista;
+      await persistQueueSupportData({
+        idReservarEntrevista,
+        duracionMin: duracionAtencion,
       });
 
       recalculatedInterviews.push({
@@ -1191,6 +1295,8 @@ export const insertarReservaEntrevista = async (payload) => {
 
 export const enviarCorreoPadres = async ({
   idPadre,
+  idEstudiante,
+  nombreEstudiante,
   motivo,
   materia,
   fecha,
@@ -1247,6 +1353,12 @@ export const enviarCorreoPadres = async ({
     const nombresPadre = `${padre.nombres} ${padre.apellidopaterno} ${padre.apellidomaterno}`;
     const emailPadre = padre.email;
 
+    let estudianteNombre = (nombreEstudiante || "").toString().trim();
+    if (!estudianteNombre && idEstudiante) {
+      const estudianteQuery = await repository.fetchEstudianteNombre(idEstudiante);
+      estudianteNombre = (estudianteQuery.rows[0]?.nombre || "").toString().trim();
+    }
+
     if (!emailPadre) {
       console.error(
         "Correo electrÃ³nico del padre no encontrado para idpadre:",
@@ -1268,9 +1380,11 @@ export const enviarCorreoPadres = async ({
     const profesionalLabel = nombreProfesor
       ? `${titulo}: ${nombreProfesor}`
       : `${titulo}: Profesional IDEB`;
+    const { iconSrc, attachments } = getEmailBranding();
 
     const { html, text } = buildEntrevistaEmailContent({
       destinatario: nombresPadre,
+      estudiante: estudianteNombre || "Estudiante no especificado",
       motivo,
       materia,
       fecha,
@@ -1278,12 +1392,14 @@ export const enviarCorreoPadres = async ({
       horaFin: horafin,
       descripcion,
       profesional: profesionalLabel,
+      iconSrc,
     });
     const { provider } = await sendEmailWithFallback({
       to: emailPadre,
       subject: "Confirmacion de entrevista IDEB",
       text,
       html,
+      attachments,
     });
 
     console.log(`Correo enviado a: ${emailPadre} (proveedor: ${provider})`);
@@ -1324,6 +1440,11 @@ export const eliminarEntrevista = async ({ idReservarEntrevista, nuevoEstado }) 
       );
     }
 
+    const trackingResult = await repository.fetchEntrevistaTrackingData(
+      idReservarEntrevista
+    );
+    const entrevistaActual = trackingResult.rows[0] || null;
+
     // Actualizar el estado de la entrevista en la base de datos
     const resultado = await repository.updateEntrevistaEstado(
       idEstado,
@@ -1333,6 +1454,18 @@ export const eliminarEntrevista = async ({ idReservarEntrevista, nuevoEstado }) 
     // Verificar si se encontrÃ³ la entrevista
     if (resultado.rows.length === 0) {
       return fail(404, "Entrevista no encontrada.");
+    }
+
+    if (
+      entrevistaActual?.idreservarentrevista &&
+      Number(entrevistaActual.idestado) === 1 &&
+      (idEstado === 2 || idEstado === 3)
+    ) {
+      await repository.startTiempoAtencionEntrevista(
+        idReservarEntrevista,
+        entrevistaActual.idprofesor || null,
+        entrevistaActual.idpsicologo || null
+      );
     }
 
     const mensajeEstado =
@@ -1539,6 +1672,8 @@ export const procesarCierreAgendaEntrevistas = async (fecha) => {
 
           await enviarCorreoPadres({
             idPadre: entrevista.idpadre,
+            idEstudiante: entrevista.idestudiante,
+            nombreEstudiante: entrevista.nombre_estudiante,
             motivo: entrevista.nombremotivo || "Sin motivo",
             materia: entrevista.materia || "Materia no especificada",
             fecha: entrevista.fecha || fecha,
@@ -1553,6 +1688,11 @@ export const procesarCierreAgendaEntrevistas = async (fecha) => {
             idReservarEntrevista: entrevista.idreservarentrevista,
             horaInicioConfirmada: horaInicioEntrevista,
             horaFinConfirmada: horaFinEntrevista,
+          });
+
+          await persistQueueSupportData({
+            idReservarEntrevista: entrevista.idreservarentrevista,
+            duracionMin: duracion,
           });
 
           procesadas += 1;
